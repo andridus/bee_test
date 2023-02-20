@@ -1,0 +1,13 @@
+version: '3'
+
+services:
+  db:
+    image: postgres:13.4
+    environment:
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: postgres
+      ENCODING: UTF8
+      POSTGRES_BD: bee_test
+      POSTGRESQL_ENABLE_TLS: 'yes'
+    ports:
+      - "5432:5432"
