@@ -4,6 +4,12 @@ defmodule BeeTest.BasicApiTest do
   alias BeeTest.Core.{Comment, Post, User}
 
   describe "Basic Api" do
+    test "permissions" do
+      assert [:name, :username, :password] = User.bee_permission(:basic)
+
+      assert [:name, :username, :password, :id, :inserted_at, :updated_at] =
+               User.bee_permission(:admin)
+    end
     test "one" do
       assert {:ok, %User{id: id, function: :user}} =
                User.Api.insert(%{
@@ -61,50 +67,126 @@ defmodule BeeTest.BasicApiTest do
           })
           id
        end
-      assert [user_id|_] = users_id
+      assert user_id = Enum.random(users_id)
       assert 101 = User.Api.count()
-      assert {:ok, %{id: ^user_id, posts: [%{comments: [_|_]}|_]}} = User.Api.get(user_id, preload: [posts: [preload: [:comments]]])
+      assert {:ok, %{id: ^user_id, posts: [%{comments: [_|_]}|_]}} =
+        User.Api.get(user_id,
+        where: [
+          posts: [
+            __COUNT__: {:id, :gt, 0},
+            # __SUM__: {:likes, :gt, 0},
+            # __MAX__: {:likes, :gt, 0},
+            # __MIN__: {:likes, :gt, 0},
+            # __AVG__: {:likes, :gt, 0}
+          ]
+          # profile: [
+          #   email: "fulano@testing.com"
+          # ]
+        ],
+        preload: [
+          posts: [preload: [:comments]]
+        ])
 
-      assert [%{id: _}|_] = User.Api.all(where: [function: {:in, [:user]}])
-      assert [:name, :username, :password] = User.bee_permission(:basic)
-
-      assert [:name, :username, :password, :id, :inserted_at, :updated_at] =
-               User.bee_permission(:admin)
-
-      # assert [
-      #          limit: 10,
-      #          offset: 10,
-      #          where: [],
-      #          select: [:username, :name, :password, :inserted_at]
-      #        ] =
-      #          User.Api.params_to_query(
-      #            limit: 10,
-      #            fields: "username,name,function,permissions,password,inserted_at",
-      #            assocs: "",
-      #            filter: "username[eq]='Fulan',function[eq]='admin'",
-      #            # [
-      #            #  username: "Fulan",
-      #            #  function: {:in, "basic"},
-      #            #  permissions, {:contains, "basic"},
-      #            #  posts: [
-      #            #   status: :PUBLISHED
-      #            #  ]
-      #            # ]
-      #            offset: 10,
-      #            permission: :admin
-      #          )
-
-      # assert {:ok,  :not_found} = User.Api.get_by(where: [{{:in, :permissions}, [:module3]}])
-      # assert {:ok,  %User{id: ^id}} = User.Api.get_by(where: [{{:in, :permissions}, [:module1]}])
-      ### testing preload
-      ### testing save embed schema
+      ### test filters
+      assert [user] = User.Api.all(where: [function: {:in, [:user]}], select: [:username], limit: 1)
+      refute user[:id]
+      assert [%{username: _}] = User.Api.all(where: [function: {:in, [:user]}], select: [:username], limit: 1)
     end
-    defp create_text(words, sep \\ " "), do: for(_w <- 0..words, do: Bee.unique(:rand.uniform(25))) |> Enum.join(sep)
+    test "query relation" do
+      assert {:ok, %User{id: uid, function: :user}} =
+               User.Api.insert(%{
+                 name: "Fulan",
+                 username: "fulan",
+                 function: :user,
+                 permissions: [:module1, :module2]
+               })
 
-    # test "Getters" do
-    #   assert [] = User.Api.all()
-    #   assert {:error, :not_found} = User.Api.get(1)
-    #   assert {:error, :not_found} = User.Api.get_by(where: [{{:in, :permissions}, [:basic]}])
-    # end
+   assert {:ok, %{id: pid}} = Post.Api.insert(%{
+            title: create_text(3),
+            slug: create_text(3, "_"),
+            user_id: uid,
+            status: :PUBLISHED,
+            is_published: true,
+            published_at: DateTime.utc_now()
+          })
+    assert {:ok, %{id: _cid}} = Comment.Api.insert(%{
+            comment: create_text(25),
+            slug: create_text(3, "_"),
+            user_id: uid,
+            post_id: pid,
+            status: :APPROVED,
+            is_approved: true,
+            approved_at: DateTime.utc_now()
+          })
+       assert {:ok, %{id: _, posts: [%{id: _, comments: [%{id: _}]}]}} =
+        User.Api.get(uid,
+        where: [
+          posts: [
+            status: :PUBLISHED,
+            comments: [
+              status: {:eq, :APPROVED}
+            ]
+          ]
+        ],
+        preload: [posts: [preload: [:comments]]])
+
+
+      assert {:ok, %{id: _, comments: [], posts: [%{id: _, comments: [%{id: _}]}]}} =
+        User.Api.get(uid,
+        where: [
+          posts: [
+            status: :PUBLISHED,
+            comments: [
+              status: {:eq, :APPROVED}
+            ]
+          ],
+          # comments: [
+          #   status: {:eq, :PENDING}
+          # ]
+        ],
+        preload: [posts: [preload: [:comments]], comments: [where: [status: {:eq, :PENDING}]]])
+
+      assert {:ok, %{id: _, comments: [%{id: _}], posts: [%{id: _, comments: [%{id: _}]}]}} =
+        User.Api.get(uid,
+        where: [
+          posts: [
+            status: :PUBLISHED,
+            comments: [
+              status: {:eq, :APPROVED}
+            ]
+          ],
+          comments: [
+            status: {:eq, :APPROVED}
+          ]
+        ],
+        preload: [posts: [preload: [:comments]], comments: [where: [status: {:eq, :APPROVED}]]])
+
+      assert {:error, :not_found} =
+        User.Api.get(uid,
+        where: [
+          posts: [
+            status: :PUBLISHED,
+            comments: [
+              status: {:eq, :PENDING}
+            ]
+          ],
+        ], preload: [posts: [preload: [:comments]]])
+
+        assert {:ok, %{id: _}} =
+        User.Api.get(uid,
+        where: [
+          posts: [
+            status: :PUBLISHED
+          ],
+          comments: [
+            status: :APPROVED
+          ]
+        ],
+        preload: [
+          :comments,
+          posts: [preload: [:comments]]
+        ])
+    end
   end
+  defp create_text(words, sep \\ " "), do: for(_w <- 0..words, do: Bee.unique(:rand.uniform(25))) |> Enum.join(sep)
 end

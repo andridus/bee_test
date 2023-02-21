@@ -3,7 +3,7 @@ defmodule BeeTest.Core.User do
   use Ecto.Schema
   use Bee.Schema
 
-  alias BeeTest.Core.Post
+  alias BeeTest.Core.{Comment, Post}
 
   generate_bee do
     permission(:basic, [:name, :username, :password])
@@ -22,6 +22,7 @@ defmodule BeeTest.Core.User do
       timestamps()
 
       has_many :posts, Post
+      has_many :comments, Comment
     end
   end
 

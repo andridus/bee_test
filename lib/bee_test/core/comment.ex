@@ -1,5 +1,4 @@
 defmodule BeeTest.Core.Comment do
-  @moduledoc false
   alias BeeTest.Core.{User, Post}
 
   use Ecto.Schema
